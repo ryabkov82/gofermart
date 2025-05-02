@@ -11,8 +11,10 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ryabkov82/gofermart/internal/app/config"
+	"github.com/ryabkov82/gofermart/internal/app/handlers/orders/upload"
 	"github.com/ryabkov82/gofermart/internal/app/handlers/users/login"
 	"github.com/ryabkov82/gofermart/internal/app/handlers/users/register"
+	"github.com/ryabkov82/gofermart/internal/app/server/middleware/auth"
 	mwlogger "github.com/ryabkov82/gofermart/internal/app/server/middleware/logger"
 	"github.com/ryabkov82/gofermart/internal/app/server/middleware/mwgzip"
 	"github.com/ryabkov82/gofermart/internal/app/service"
@@ -35,8 +37,18 @@ func StartServer(log *zap.Logger, cfg *config.Config) {
 	router.Use(mwlogger.RequestLogging(log))
 	router.Use(mwgzip.Gzip)
 
-	router.Post("/api/user/register", register.GetHandler(srv, []byte(cfg.JwtKey), log))
-	router.Post("/api/user/login", login.GetHandler(srv, []byte(cfg.JwtKey), log))
+	// Публичные роуты
+	router.Group(func(router chi.Router) {
+		router.Post("/api/user/register", register.GetHandler(srv, []byte(cfg.JwtKey), log))
+		router.Post("/api/user/login", login.GetHandler(srv, []byte(cfg.JwtKey), log))
+	})
+
+	// Приватные роуты (требуют аутентификации)
+	router.Group(func(router chi.Router) {
+		router.Use(auth.AuthMiddleware([]byte(cfg.JwtKey)))
+		router.Post("/api/user/order", upload.GetHandler(srv, log))
+
+	})
 
 	log.Info("Server started", zap.String("address", cfg.HTTPServerAddr))
 

@@ -4,11 +4,13 @@ import (
 	"context"
 
 	"github.com/ryabkov82/gofermart/internal/app/models"
+	"github.com/ryabkov82/gofermart/internal/app/utils/jwtauth"
 )
 
 type Repository interface {
 	CreateUser(context.Context, *models.User) error
 	GetUserByLogin(context.Context, string) (*models.User, error)
+	AddOrder(context.Context, *models.Order) error
 }
 
 type Service struct {
@@ -42,4 +44,24 @@ func (s *Service) RegisterUser(ctx context.Context, login string, password strin
 func (s *Service) GetUserByLogin(ctx context.Context, login string) (*models.User, error) {
 	userDB, err := s.repo.GetUserByLogin(ctx, login)
 	return userDB, err
+}
+
+func (s *Service) AddOrder(ctx context.Context, number string) (*models.Order, error) {
+
+	userID := ctx.Value(jwtauth.UserIDContextKey)
+	order := &models.Order{
+		Number: number,
+		UserID: userID.(int),
+	}
+
+	numberIsValid := order.ValidateOrderNumber()
+
+	if !numberIsValid {
+		return order, models.ErrInvalidOrderNumber
+	}
+
+	err := s.repo.AddOrder(ctx, order)
+
+	return order, err
+
 }

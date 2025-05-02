@@ -39,7 +39,7 @@ func GetHandler(urlHandler URLHandler, jwtKey []byte, log *zap.Logger) http.Hand
 		if err != nil {
 			if errors.Is(err, storage.ErrLoginExists) {
 				http.Error(res, "Login already exists", http.StatusConflict)
-				log.Error("Login already exists", zap.Error(err))
+				log.Error("Login already exists", zap.String("login", request.Login), zap.Int("UserID", user.UserID))
 				return
 			}
 			http.Error(res, "Internal server error", http.StatusInternalServerError)
