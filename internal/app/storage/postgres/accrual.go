@@ -35,16 +35,21 @@ func NewPostgresAccrualRepository(StoragePath string) (*PostgresAccrualRepositor
 // GetOrdersForProcessing возвращает заказы для обработки
 func (r *PostgresAccrualRepository) GetOrdersForProcessing(ctx context.Context, limit int, excludeOrders []string) ([]models.Order, error) {
 
-	query := `
-        SELECT number, user_id, status, accrual, uploaded_at
-        FROM orders
-        WHERE status IN ('NEW', 'PROCESSING')
-        AND number != ALL($1)
-        ORDER BY uploaded_at ASC
-        LIMIT $2
-    `
+	stmt, err := r.db.PrepareContext(ctx, `
+	SELECT number, user_id, status, accrual, uploaded_at
+	FROM orders
+	WHERE status IN ('NEW', 'PROCESSING')
+	AND number != ALL($1)
+	ORDER BY uploaded_at ASC
+	LIMIT $2
+	`)
 
-	rows, err := r.db.QueryContext(ctx, query, pq.Array(excludeOrders), limit)
+	if err != nil {
+		return nil, fmt.Errorf("prepare orders statement failed: %w", err)
+	}
+	defer stmt.Close()
+
+	rows, err := stmt.QueryContext(ctx, pq.Array(excludeOrders), limit)
 	if err != nil {
 		return nil, err
 	}
@@ -57,6 +62,10 @@ func (r *PostgresAccrualRepository) GetOrdersForProcessing(ctx context.Context, 
 			return nil, err
 		}
 		orders = append(orders, o)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
 	}
 
 	return orders, nil
