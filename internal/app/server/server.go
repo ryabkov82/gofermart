@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -18,8 +19,8 @@ import (
 	mwlogger "github.com/ryabkov82/gofermart/internal/app/server/middleware/logger"
 	"github.com/ryabkov82/gofermart/internal/app/server/middleware/mwgzip"
 	"github.com/ryabkov82/gofermart/internal/app/service"
-	"github.com/ryabkov82/gofermart/internal/app/storage/postgres"
 	"github.com/ryabkov82/gofermart/internal/app/service/accrual"
+	"github.com/ryabkov82/gofermart/internal/app/storage/postgres"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -41,7 +42,7 @@ func StartServer(log *zap.Logger, cfg *config.Config) {
 		// Клиент для системы начислений
 		accrualClient := accrual.NewAccrualClient(cfg.AccrualSystemAddress, cfg.Accrual.RateLimit)
 		// Создание сервиса
-		accrualService := accrual.NewService(accrualRepo, accrualClient)		
+		accrualService := accrual.NewService(accrualRepo, accrualClient)
 
 		// Создание и запуск воркера
 		worker := accrual.NewWorker(accrualService, log, cfg.Accrual)
@@ -78,8 +79,14 @@ func StartServer(log *zap.Logger, cfg *config.Config) {
 
 	// Запуск HTTP-сервера в отдельной горутине
 
+	u, err := url.Parse(cfg.HTTPServerAddr)
+	if err != nil {
+		panic(err)
+	}
+
+	serverAddr := u.Host // "localhost:8081"
 	server := &http.Server{
-		Addr:    cfg.HTTPServerAddr,
+		Addr:    serverAddr,
 		Handler: router, // Ваш роутер
 	}
 
