@@ -1,0 +1,7 @@
+BEGIN;
+
+DROP TABLE IF EXISTS user_balances;
+
+ALTER TABLE orders DROP COLUMN IF EXISTS accrual;
+
+COMMIT;

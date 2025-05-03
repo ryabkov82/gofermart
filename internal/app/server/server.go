@@ -19,6 +19,7 @@ import (
 	"github.com/ryabkov82/gofermart/internal/app/server/middleware/mwgzip"
 	"github.com/ryabkov82/gofermart/internal/app/service"
 	"github.com/ryabkov82/gofermart/internal/app/storage/postgres"
+	"github.com/ryabkov82/gofermart/internal/app/service/accrual"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -30,6 +31,29 @@ func StartServer(log *zap.Logger, cfg *config.Config) {
 	if err != nil {
 		panic(err)
 	}
+
+	if cfg.AccrualSystemAddress != "" {
+		// Создание репозиториев
+		accrualRepo, err := postgres.NewPostgresAccrualRepository(cfg.DBConnect)
+		if err != nil {
+			panic(err)
+		}
+		// Клиент для системы начислений
+		accrualClient := accrual.NewAccrualClient(cfg.AccrualSystemAddress, cfg.Accrual.RateLimit)
+		// Создание сервиса
+		accrualService := accrual.NewService(accrualRepo, accrualClient)		
+
+		// Создание и запуск воркера
+		worker := accrual.NewWorker(accrualService, log, cfg.Accrual)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// Запуск воркера в отдельной горутине
+		go worker.Run(ctx)
+		log.Info("AccrualWorker started successfully", zap.String("AccrualSystemAddress", cfg.AccrualSystemAddress))
+	}
+
 	srv := service.NewService(pg)
 
 	router := chi.NewRouter()

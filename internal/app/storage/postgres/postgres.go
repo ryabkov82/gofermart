@@ -33,8 +33,8 @@ func NewPostgresStorage(StoragePath string) (*PostgresStorage, error) {
 		return nil, fmt.Errorf("migrations failed: %w", err)
 	}
 
-	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(25)
+	db.SetMaxOpenConns(100)
+	db.SetMaxIdleConns(50)
 	db.SetConnMaxLifetime(5 * time.Minute)
 
 	insertUserStmt, err := db.Prepare(`

@@ -17,12 +17,24 @@ type User struct {
 	PasswordHash string `json:"-"` // Пропускаем в JSON
 }
 
+// OrderStatus представляет возможные статусы заказа
+type OrderStatus string
+
+const (
+	OrderStatusNew        OrderStatus = "NEW"
+	OrderStatusProcessing OrderStatus = "PROCESSING"
+	OrderStatusProcessed  OrderStatus = "PROCESSED"
+	OrderStatusInvalid    OrderStatus = "INVALID"
+	OrderStatusRegistered OrderStatus = "REGISTERED"
+)
+
 // Order представляет модель данных заказа
 type Order struct {
-	Number     string `json:"number"`
-	UserID     int    `json:"-"`
-	Status     string `json:"status"`
-	UploadedAt string `json:"uploaded_at"`
+	Number     string      `json:"number"`
+	UserID     int         `json:"-"`
+	Status     OrderStatus `json:"status"`
+	Accrual    float64     `json:"accrual,omitempty"`
+	UploadedAt string      `json:"uploaded_at"`
 }
 
 // HashPassword создает bcrypt-хеш пароля

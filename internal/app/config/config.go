@@ -1,31 +1,104 @@
 package config
 
 import (
-	"errors"
 	"flag"
+	"fmt"
 	"log"
+	"net"
+	"net/url"
 	"os"
-	"strconv"
+	"regexp"
 	"strings"
+	"time"
 )
 
-type Config struct {
-	HTTPServerAddr  string
-	HTTPAccrualAddr string
-	LogLevel        string
-	DBConnect       string
-	JwtKey          string
+type AccrualConfig struct {
+	RateLimit     float64       // 10 запросов/сек
+	WorkerCount   int           // Количество воркеров
+	BatchSize     int           // Размер батча (например, 50)
+	BatchTimeout  time.Duration // Таймаут формирования батча (например, 1s)
+	QueueCapacity int           // Размер буфера очередей // 5 * BatchSize
+	PollInterval  time.Duration // Интервал загрузки новых задач
 }
 
-func validateHTTPServerAddr(addr string) error {
+type Config struct {
+	HTTPServerAddr       string
+	LogLevel             string
+	DBConnect            string
+	JwtKey               string
+	AccrualSystemAddress string
+	Accrual              AccrualConfig
+}
 
-	hp := strings.Split(addr, ":")
-	if len(hp) != 2 {
-		return errors.New("need address in a form host:port")
+// ValidateServerAddress проверяет валидность HTTP адреса сервера
+func ValidateServerAddress(addr string) (string, error) {
+	if !strings.HasPrefix(addr, "http://") && !strings.HasPrefix(addr, "https://") {
+		addr = "http://" + addr
 	}
-	_, err := strconv.Atoi(hp[1])
 
-	return err
+	u, err := url.Parse(addr)
+	if err != nil {
+		return "", fmt.Errorf("invalid URL format: %w", err)
+	}
+
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", fmt.Errorf("unsupported protocol scheme: %s", u.Scheme)
+	}
+
+	if u.Host == "" {
+		return "", fmt.Errorf("missing host in address")
+	}
+
+	host, port, err := net.SplitHostPort(u.Host)
+	if err != nil {
+		// Если ошибка из-за отсутствия порта, используем весь host
+		if strings.Contains(err.Error(), "missing port") {
+			host = u.Host
+		} else {
+			return "", fmt.Errorf("invalid host:port format: %w", err)
+		}
+	}
+
+	// Проверка IP или домена
+	if ip := net.ParseIP(host); ip == nil {
+		if !isValidHostname(host) { // Обновленная функция проверки
+			return "", fmt.Errorf("invalid domain or IP address: %s", host)
+		}
+	}
+
+	// Проверка порта (если указан)
+	if port != "" {
+		if _, err := net.LookupPort("tcp", port); err != nil {
+			return "", fmt.Errorf("invalid port: %s", port)
+		}
+	}
+
+	// Нормализация URL
+	normalized := fmt.Sprintf("%s://%s", u.Scheme, u.Host)
+	if port == "" {
+		if u.Scheme == "http" {
+			normalized += ":80"
+		} else if u.Scheme == "https" {
+			normalized += ":443"
+		}
+	}
+
+	return normalized, nil
+}
+
+// Обновленная проверка имени хоста
+func isValidHostname(host string) bool {
+	// Локальные имена
+	if host == "localhost" || strings.HasPrefix(host, "localhost.") {
+		return true
+	}
+
+	// Регулярное выражение для доменов:
+	// 1. Допускает буквы, цифры, дефисы и точки
+	// 2. Минимум 2 части (example.com)
+	// 3. В каждой части не может начинаться/заканчиваться на дефис или точку
+	domainRegex := regexp.MustCompile(`^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$`)
+	return domainRegex.MatchString(host)
 }
 
 func Load() *Config {
@@ -34,9 +107,19 @@ func Load() *Config {
 	cfg.HTTPServerAddr = "localhost:8080"
 	cfg.JwtKey = "your_strong_secret_here"
 
+	cfgAccrual := new(AccrualConfig)
+	cfgAccrual.RateLimit = 10
+	cfgAccrual.WorkerCount = 3
+	cfgAccrual.BatchSize = 50
+	cfgAccrual.PollInterval = 10 * time.Second
+	cfgAccrual.BatchTimeout = 5 * time.Second
+	cfgAccrual.QueueCapacity = 250
+
+	cfg.Accrual = *cfgAccrual
+
 	flag.Func("a", "Gofermart Server address host:port", func(flagValue string) error {
 
-		err := validateHTTPServerAddr(flagValue)
+		flagValue, err := ValidateServerAddress(flagValue)
 
 		if err != nil {
 			return err
@@ -48,13 +131,13 @@ func Load() *Config {
 
 	flag.Func("r", "Accrual server address host:port", func(flagValue string) error {
 
-		err := validateHTTPServerAddr(flagValue)
+		flagValue, err := ValidateServerAddress(flagValue)
 
 		if err != nil {
 			return err
 		}
 
-		cfg.HTTPAccrualAddr = flagValue
+		cfg.AccrualSystemAddress = flagValue
 		return nil
 	})
 
@@ -66,22 +149,12 @@ func Load() *Config {
 
 	if envHTTPServerAddr := os.Getenv("RUN_ADDRESS"); envHTTPServerAddr != "" {
 
-		err := validateHTTPServerAddr(envHTTPServerAddr)
+		envHTTPServerAddr, err := ValidateServerAddress(envHTTPServerAddr)
 		if err != nil {
 			log.Fatalf("error validate RUN_ADDRESS: %s", err)
 		}
 
 		cfg.HTTPServerAddr = envHTTPServerAddr
-	}
-
-	if envHTTPAccrualAddr := os.Getenv("ACCRUAL_SYSTEM_ADDRESS"); envHTTPAccrualAddr != "" {
-
-		err := validateHTTPServerAddr(envHTTPAccrualAddr)
-		if err != nil {
-			log.Fatalf("error validate ACCRUAL_SYSTEM_ADDRESS: %s", err)
-		}
-
-		cfg.HTTPAccrualAddr = envHTTPAccrualAddr
 	}
 
 	if envDBConnect := os.Getenv("DATABASE_URI"); envDBConnect != "" {
@@ -94,6 +167,16 @@ func Load() *Config {
 		}
 
 		cfg.JwtKey = envJWTSECRET
+	}
+
+	if envHTTPAccrualAddr := os.Getenv("ACCRUAL_SYSTEM_ADDRESS"); envHTTPAccrualAddr != "" {
+
+		envHTTPAccrualAddr, err := ValidateServerAddress(envHTTPAccrualAddr)
+		if err != nil {
+			log.Fatalf("error validate ACCRUAL_SYSTEM_ADDRESS: %s", err)
+		}
+
+		cfg.AccrualSystemAddress = envHTTPAccrualAddr
 	}
 
 	return cfg
