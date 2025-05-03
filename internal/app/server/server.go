@@ -71,7 +71,7 @@ func StartServer(log *zap.Logger, cfg *config.Config) {
 	// Приватные роуты (требуют аутентификации)
 	router.Group(func(router chi.Router) {
 		router.Use(auth.AuthMiddleware([]byte(cfg.JwtKey)))
-		router.Post("/api/user/order", upload.GetHandler(srv, log))
+		router.Post("/api/user/orders", upload.GetHandler(srv, log))
 
 	})
 
