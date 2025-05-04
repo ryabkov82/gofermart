@@ -14,10 +14,11 @@ import (
 )
 
 type PostgresStorage struct {
-	db              *sql.DB
-	insertUserStmt  *sql.Stmt
-	getUserStmt     *sql.Stmt
-	insertOrderStmt *sql.Stmt
+	db                *sql.DB
+	insertUserStmt    *sql.Stmt
+	getUserStmt       *sql.Stmt
+	insertOrderStmt   *sql.Stmt
+	getUserOrdersStmt *sql.Stmt
 }
 
 func NewPostgresStorage(StoragePath string) (*PostgresStorage, error) {
@@ -70,7 +71,17 @@ func NewPostgresStorage(StoragePath string) (*PostgresStorage, error) {
 		return nil, err
 	}
 
-	return &PostgresStorage{db, insertUserStmt, getUserStmt, insertOrderStmt}, nil
+	getUserOrdersStmt, err := db.Prepare(`
+	SELECT number, status, accrual, uploaded_at 
+	FROM orders 
+	WHERE user_id = $1 
+	ORDER BY uploaded_at DESC`)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &PostgresStorage{db, insertUserStmt, getUserStmt, insertOrderStmt, getUserOrdersStmt}, nil
 
 }
 
@@ -126,4 +137,29 @@ func (s *PostgresStorage) AddOrder(ctx context.Context, order *models.Order) err
 	order.UserID = userID
 
 	return err
+}
+
+func (s *PostgresStorage) GetUserOrders(ctx context.Context, userID int) ([]models.Order, error) {
+
+	rows, err := s.getUserOrdersStmt.QueryContext(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var orders []models.Order
+	for rows.Next() {
+		var o models.Order
+		if err := rows.Scan(&o.Number, &o.Status, &o.Accrual, &o.UploadedAt); err != nil {
+			return nil, err
+		}
+		orders = append(orders, o)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
+	}
+
+	return orders, nil
+
 }

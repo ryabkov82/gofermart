@@ -14,10 +14,10 @@ type AccrualRepository interface {
 
 type AccrualService struct {
 	repo   AccrualRepository
-	client AccrualClient
+	client *AccrualClient
 }
 
-func NewService(storage AccrualRepository, client AccrualClient) *AccrualService {
+func NewService(storage AccrualRepository, client *AccrualClient) *AccrualService {
 	return &AccrualService{
 		repo:   storage,
 		client: client,

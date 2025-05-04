@@ -11,6 +11,7 @@ type Repository interface {
 	CreateUser(context.Context, *models.User) error
 	GetUserByLogin(context.Context, string) (*models.User, error)
 	AddOrder(context.Context, *models.Order) error
+	GetUserOrders(context.Context, int) ([]models.Order, error)
 }
 
 type Service struct {
@@ -64,4 +65,11 @@ func (s *Service) AddOrder(ctx context.Context, number string) (*models.Order, e
 
 	return order, err
 
+}
+
+func (s *Service) GetUserOrders(ctx context.Context) ([]models.Order, error) {
+
+	userID := ctx.Value(jwtauth.UserIDContextKey)
+	orders, err := s.repo.GetUserOrders(ctx, userID.(int))
+	return orders, err
 }

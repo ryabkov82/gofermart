@@ -11,19 +11,14 @@ import (
 	"github.com/ryabkov82/gofermart/internal/app/models"
 )
 
-// Интерфейс объявляем там, где он используется (в сервисе)
-type AccrualClient interface {
-	GetOrderInfo(ctx context.Context, orderNumber string) (*models.OrderAccrual, error)
-}
-
-type accrualClient struct {
+type AccrualClient struct {
 	baseURL    string
 	httpClient *http.Client
 	limiter    *AdaptiveRateLimiter
 }
 
-func NewAccrualClient(baseURL string, initialRPS float64) AccrualClient {
-	return &accrualClient{
+func NewAccrualClient(baseURL string, initialRPS float64) *AccrualClient {
+	return &AccrualClient{
 		baseURL: baseURL,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
@@ -32,7 +27,7 @@ func NewAccrualClient(baseURL string, initialRPS float64) AccrualClient {
 	}
 }
 
-func (c *accrualClient) GetOrderInfo(ctx context.Context, orderNumber string) (*models.OrderAccrual, error) {
+func (c *AccrualClient) GetOrderInfo(ctx context.Context, orderNumber string) (*models.OrderAccrual, error) {
 
 	// Ожидаем токен
 	if err := c.limiter.Wait(ctx); err != nil {

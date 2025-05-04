@@ -2,6 +2,7 @@ package accrual
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -34,6 +35,7 @@ type AccrualWorker struct {
 
 type OrderTask struct {
 	OrderNumber string
+	Status      models.OrderStatus
 	UserID      int
 }
 
@@ -74,7 +76,7 @@ func (w *AccrualWorker) Run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			w.Shutdown()
+			w.Shutdown(5 * time.Second)
 			return
 		case <-ticker.C:
 			w.loadTasks(ctx)
@@ -97,7 +99,7 @@ func (w *AccrualWorker) loadTasks(ctx context.Context) {
 	// 3. Добавляем в очередь и в активные задачи
 	for _, order := range orders {
 		select {
-		case w.taskQueue <- OrderTask{OrderNumber: order.Number, UserID: order.UserID}:
+		case w.taskQueue <- OrderTask{OrderNumber: order.Number, Status: order.Status, UserID: order.UserID}:
 			w.trackActiveTask(order.Number) // Помечаем как "в обработке"
 		default:
 			w.logger.Info("Task queue full, skipping")
@@ -117,10 +119,8 @@ func (w *AccrualWorker) processWorker(ctx context.Context, workerID int) {
 			// Обработка задачи
 			result, err := w.processSingleOrder(ctx, task, workerID)
 
-			// Независимо от результата снимаем отметку
-			w.untrackTask(task.OrderNumber)
-
 			if err != nil {
+				w.untrackTask(task.OrderNumber)
 				continue
 			}
 
@@ -144,8 +144,15 @@ func (w *AccrualWorker) processSingleOrder(ctx context.Context, task OrderTask, 
 		w.logger.Error("failed to get order info", zap.Error(err))
 		return models.OrderAccrual{}, err
 	}
+	if accrualInfo != nil {
+		accrualInfo.UserID = task.UserID
+		accrualInfo.StatusOld = task.Status
+		return *accrualInfo, nil
+	} else {
+		// нет информации по заказу
+		return models.OrderAccrual{}, errors.New("no content")
+	}
 
-	return *accrualInfo, nil
 }
 
 func (w *AccrualWorker) batchAggregator() {
@@ -195,8 +202,8 @@ func (w *AccrualWorker) flushBatch() {
 		if order.Accrual > 0 {
 			userAccruals[order.UserID] += order.Accrual
 		}
-		// Обновляем только если статус окончательный
-		if order.Status == models.OrderStatusProcessed || order.Status == models.OrderStatusInvalid {
+		// Обновляем только если статус изменился
+		if order.Status != order.StatusOld {
 			orderUpdates = append(orderUpdates, models.Order{
 				Number:  order.OrderNumber,
 				Status:  order.Status,
@@ -212,8 +219,14 @@ func (w *AccrualWorker) flushBatch() {
 		w.logger.Info("Successfully processed batch", zap.Int("orders", len(w.collected)))
 	}
 
+	// Независимо от результата снимаем отметку
+	for _, order := range w.collected {
+		w.untrackTask(order.OrderNumber)
+	}
+
 	// Очищаем собранные данные
 	w.collected = w.collected[:0]
+
 }
 
 func (w *AccrualWorker) trackActiveTask(orderNumber string) {
@@ -240,9 +253,22 @@ func (w *AccrualWorker) getActiveTasks() []string {
 }
 
 // Graceful shutdown:
-func (w *AccrualWorker) Shutdown() {
+func (w *AccrualWorker) Shutdown(timeout time.Duration) {
+
 	close(w.shutdownChan)
-	w.wg.Wait()
+
+	done := make(chan struct{})
+	go func() {
+		w.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		w.logger.Info("Все воркеры завершили работу")
+	case <-time.After(timeout):
+		w.logger.Info("Таймаут ожидания завершения воркеров")
+	}
 
 	// Дополнительно закрываем каналы
 	close(w.taskQueue)

@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -12,6 +11,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ryabkov82/gofermart/internal/app/config"
+	"github.com/ryabkov82/gofermart/internal/app/handlers/orders/getorders"
 	"github.com/ryabkov82/gofermart/internal/app/handlers/orders/upload"
 	"github.com/ryabkov82/gofermart/internal/app/handlers/users/login"
 	"github.com/ryabkov82/gofermart/internal/app/handlers/users/register"
@@ -33,6 +33,7 @@ func StartServer(log *zap.Logger, cfg *config.Config) {
 		panic(err)
 	}
 
+	var worker *accrual.AccrualWorker
 	if cfg.AccrualSystemAddress != "" {
 		// Создание репозиториев
 		accrualRepo, err := postgres.NewPostgresAccrualRepository(cfg.DBConnect)
@@ -45,7 +46,7 @@ func StartServer(log *zap.Logger, cfg *config.Config) {
 		accrualService := accrual.NewService(accrualRepo, accrualClient)
 
 		// Создание и запуск воркера
-		worker := accrual.NewWorker(accrualService, log, cfg.Accrual)
+		worker = accrual.NewWorker(accrualService, log, cfg.Accrual)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -72,21 +73,13 @@ func StartServer(log *zap.Logger, cfg *config.Config) {
 	router.Group(func(router chi.Router) {
 		router.Use(auth.AuthMiddleware([]byte(cfg.JwtKey)))
 		router.Post("/api/user/orders", upload.GetHandler(srv, log))
-
+		router.Get("/api/user/orders", getorders.GetHandler(srv, log))
 	})
 
 	log.Info("Server started", zap.String("address", cfg.HTTPServerAddr))
 
-	// Запуск HTTP-сервера в отдельной горутине
-
-	u, err := url.Parse(cfg.HTTPServerAddr)
-	if err != nil {
-		panic(err)
-	}
-
-	serverAddr := u.Host // "localhost:8081"
 	server := &http.Server{
-		Addr:    serverAddr,
+		Addr:    cfg.HTTPServerAddr,
 		Handler: router, // Ваш роутер
 	}
 
@@ -110,6 +103,10 @@ func StartServer(log *zap.Logger, cfg *config.Config) {
 	// Остановка HTTP-сервера
 	if err := server.Shutdown(ctx); err != nil {
 		log.Info("HTTP server shutdown error", zap.Error(err))
+	}
+
+	if worker != nil {
+		worker.Shutdown(5 * time.Second)
 	}
 
 	log.Info("Server shutdown complete")

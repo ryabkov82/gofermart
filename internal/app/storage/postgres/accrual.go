@@ -13,7 +13,10 @@ import (
 )
 
 type PostgresAccrualRepository struct {
-	db *sql.DB
+	db                *sql.DB
+	getOrdersStmt     *sql.Stmt
+	updateOrderStmt   *sql.Stmt
+	updateBalanceStmt *sql.Stmt
 }
 
 // NewPostgresAccrualRepository создает новый репозиторий для PostgreSQL
@@ -29,13 +32,7 @@ func NewPostgresAccrualRepository(StoragePath string) (*PostgresAccrualRepositor
 	db.SetMaxIdleConns(50)
 	db.SetConnMaxLifetime(5 * time.Minute)
 
-	return &PostgresAccrualRepository{db: db}, nil
-}
-
-// GetOrdersForProcessing возвращает заказы для обработки
-func (r *PostgresAccrualRepository) GetOrdersForProcessing(ctx context.Context, limit int, excludeOrders []string) ([]models.Order, error) {
-
-	stmt, err := r.db.PrepareContext(ctx, `
+	getOrdersStmt, err := db.Prepare(`
 	SELECT number, user_id, status, accrual, uploaded_at
 	FROM orders
 	WHERE status IN ('NEW', 'PROCESSING')
@@ -47,9 +44,36 @@ func (r *PostgresAccrualRepository) GetOrdersForProcessing(ctx context.Context, 
 	if err != nil {
 		return nil, fmt.Errorf("prepare orders statement failed: %w", err)
 	}
-	defer stmt.Close()
 
-	rows, err := stmt.QueryContext(ctx, pq.Array(excludeOrders), limit)
+	updateOrderStmt, err := db.Prepare(`
+	UPDATE orders 
+	SET status = $1, accrual = $2 
+	WHERE number = $3
+	`)
+
+	if err != nil {
+		return nil, fmt.Errorf("prepare order statement failed: %w", err)
+	}
+
+	updateBalanceStmt, err := db.Prepare(`
+	INSERT INTO user_balances (user_id, current_balance, updated_at)
+	VALUES ($1, $2, NOW())
+	ON CONFLICT (user_id) DO UPDATE
+	SET current_balance = user_balances.current_balance + EXCLUDED.current_balance,
+		updated_at = NOW()
+	`)
+
+	if err != nil {
+		return nil, fmt.Errorf("prepare balance statement failed: %w", err)
+	}
+
+	return &PostgresAccrualRepository{db: db, getOrdersStmt: getOrdersStmt, updateOrderStmt: updateOrderStmt, updateBalanceStmt: updateBalanceStmt}, nil
+}
+
+// GetOrdersForProcessing возвращает заказы для обработки
+func (r *PostgresAccrualRepository) GetOrdersForProcessing(ctx context.Context, limit int, excludeOrders []string) ([]models.Order, error) {
+
+	rows, err := r.getOrdersStmt.QueryContext(ctx, pq.Array(excludeOrders), limit)
 	if err != nil {
 		return nil, err
 	}
@@ -83,20 +107,8 @@ func (r *PostgresAccrualRepository) ProcessAccruals(ctx context.Context, userAcc
 
 	// 1. Обновляем балансы (атомарный UPSERT)
 	if len(userAccruals) > 0 {
-		stmt, err := tx.PrepareContext(ctx, `
-            INSERT INTO user_balances (user_id, current_balance, updated_at)
-            VALUES ($1, $2, NOW())
-            ON CONFLICT (user_id) DO UPDATE
-            SET current_balance = user_balances.current_balance + EXCLUDED.current_balance,
-                updated_at = NOW()
-        `)
-		if err != nil {
-			return fmt.Errorf("prepare balance statement failed: %w", err)
-		}
-		defer stmt.Close()
-
 		for userID, accrual := range userAccruals {
-			if _, err := stmt.ExecContext(ctx, userID, accrual); err != nil {
+			if _, err := r.updateBalanceStmt.ExecContext(ctx, userID, accrual); err != nil {
 				return fmt.Errorf("failed to update balance for user %d: %w", userID, err)
 			}
 		}
@@ -104,18 +116,8 @@ func (r *PostgresAccrualRepository) ProcessAccruals(ctx context.Context, userAcc
 
 	// 2. Обновляем заказы (обычный UPDATE)
 	if len(orderUpdates) > 0 {
-		stmt, err := tx.PrepareContext(ctx, `
-            UPDATE orders 
-            SET status = $1, accrual = $2 
-            WHERE number = $3
-        `)
-		if err != nil {
-			return fmt.Errorf("prepare order statement failed: %w", err)
-		}
-		defer stmt.Close()
-
 		for _, order := range orderUpdates {
-			if _, err := stmt.ExecContext(ctx, order.Status, order.Accrual, order.Number); err != nil {
+			if _, err := r.updateOrderStmt.ExecContext(ctx, order.Status, order.Accrual, order.Number); err != nil {
 				return fmt.Errorf("update order failed for %s: %w", order.Number, err)
 			}
 		}

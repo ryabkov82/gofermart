@@ -119,11 +119,13 @@ func Load() *Config {
 
 	flag.Func("a", "Gofermart Server address host:port", func(flagValue string) error {
 
-		flagValue, err := ValidateServerAddress(flagValue)
+		/*
+			flagValue, err := ValidateServerAddress(flagValue)
 
-		if err != nil {
-			return err
-		}
+			if err != nil {
+				return err
+			}
+		*/
 
 		cfg.HTTPServerAddr = flagValue
 		return nil
@@ -149,10 +151,12 @@ func Load() *Config {
 
 	if envHTTPServerAddr := os.Getenv("RUN_ADDRESS"); envHTTPServerAddr != "" {
 
-		envHTTPServerAddr, err := ValidateServerAddress(envHTTPServerAddr)
-		if err != nil {
-			log.Fatalf("error validate RUN_ADDRESS: %s", err)
-		}
+		/*
+			envHTTPServerAddr, err := ValidateServerAddress(envHTTPServerAddr)
+			if err != nil {
+				log.Fatalf("error validate RUN_ADDRESS: %s", err)
+			}
+		*/
 
 		cfg.HTTPServerAddr = envHTTPServerAddr
 	}

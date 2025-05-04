@@ -3,6 +3,7 @@ package models
 import (
 	"errors"
 	"strconv"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -34,7 +35,7 @@ type Order struct {
 	UserID     int         `json:"-"`
 	Status     OrderStatus `json:"status"`
 	Accrual    float64     `json:"accrual,omitempty"`
-	UploadedAt string      `json:"uploaded_at"`
+	UploadedAt time.Time   `json:"uploaded_at"`
 }
 
 // HashPassword создает bcrypt-хеш пароля

@@ -73,7 +73,7 @@ func TestGetHandler(t *testing.T) {
 	r.Use(mwlogger.RequestLogging(logger.Log))
 	r.Use(mwgzip.Gzip)
 	r.Use(auth.AuthMiddleware(testSecretKey))
-	r.Post("/api/user/order", GetHandler(service, logger.Log))
+	r.Post("/api/user/orders", GetHandler(service, logger.Log))
 
 	// запускаем тестовый сервер, будет выбран первый свободный порт
 	srv := httptest.NewServer(r)
@@ -181,7 +181,7 @@ func TestGetHandler(t *testing.T) {
 				SetHeader("Content-Encoding", "gzip").
 				SetHeader("Accept-Encoding", "gzip").
 				SetHeader("Content-Type", "text/plain").
-				Post(srv.URL + "/api/user/order")
+				Post(srv.URL + "/api/user/orders")
 
 			assert.NoError(t, err)
 
