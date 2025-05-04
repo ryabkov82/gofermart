@@ -10,6 +10,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/ryabkov82/gofermart/internal/app/models"
+	"github.com/ryabkov82/gofermart/internal/app/service"
 	"github.com/ryabkov82/gofermart/internal/app/storage"
 )
 
@@ -192,4 +193,48 @@ func (s *PostgresStorage) GetUserBalance(ctx context.Context, userID int) (model
 
 	return balance, nil
 
+}
+
+func (s *PostgresStorage) WithdrawFunds(ctx context.Context, userID int, order string, sum float64) error {
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Проверяем текущий баланс
+	var currentBalance float64
+	err = tx.QueryRowContext(ctx,
+		"SELECT current_balance FROM user_balances WHERE user_id = $1 FOR UPDATE",
+		userID,
+	).Scan(&currentBalance)
+
+	if err != nil {
+		return err
+	}
+
+	if currentBalance < sum {
+		return service.ErrInsufficientFunds
+	}
+
+	// Обновляем баланс
+	_, err = tx.ExecContext(ctx,
+		"UPDATE user_balances SET current_balance = current_balance - $1, withdrawn_balance = withdrawn_balance + $1 WHERE user_id = $2",
+		sum, userID,
+	)
+	if err != nil {
+		return err
+	}
+
+	// Записываем операцию списания
+	_, err = tx.ExecContext(ctx,
+		"INSERT INTO withdrawals (user_id, order_number, sum, processed_at) VALUES ($1, $2, $3, $4)",
+		userID, order, sum, time.Now(),
+	)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }

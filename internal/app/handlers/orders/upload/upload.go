@@ -10,6 +10,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ryabkov82/gofermart/internal/app/models"
+	"github.com/ryabkov82/gofermart/internal/app/service"
 	"github.com/ryabkov82/gofermart/internal/app/storage"
 	"github.com/ryabkov82/gofermart/internal/app/utils/jwtauth"
 )
@@ -43,7 +44,7 @@ func GetHandler(urlHandler URLHandler, log *zap.Logger) http.HandlerFunc {
 		if err != nil {
 			log.Error(err.Error())
 			status = http.StatusInternalServerError
-			if errors.Is(err, models.ErrInvalidOrderNumber) {
+			if errors.Is(err, service.ErrInvalidOrderNumber) {
 				status = http.StatusUnprocessableEntity
 			}
 			if errors.Is(err, storage.ErrOrderExists) {

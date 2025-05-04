@@ -11,7 +11,8 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/ryabkov82/gofermart/internal/app/config"
-	"github.com/ryabkov82/gofermart/internal/app/handlers/balance"
+	"github.com/ryabkov82/gofermart/internal/app/handlers/balance/getbalance"
+	"github.com/ryabkov82/gofermart/internal/app/handlers/balance/withdraw"
 	"github.com/ryabkov82/gofermart/internal/app/handlers/orders/getorders"
 	"github.com/ryabkov82/gofermart/internal/app/handlers/orders/upload"
 	"github.com/ryabkov82/gofermart/internal/app/handlers/users/login"
@@ -75,7 +76,8 @@ func StartServer(log *zap.Logger, cfg *config.Config) {
 		router.Use(auth.AuthMiddleware([]byte(cfg.JwtKey)))
 		router.Post("/api/user/orders", upload.GetHandler(srv, log))
 		router.Get("/api/user/orders", getorders.GetHandler(srv, log))
-		router.Get("/api/user/balance", balance.GetHandler(srv, log))
+		router.Get("/api/user/balance", getbalance.GetHandler(srv, log))
+		router.Post("/api/user/balance/withdraw", withdraw.GetHandler(srv, log))
 	})
 
 	log.Info("Server started", zap.String("address", cfg.HTTPServerAddr))

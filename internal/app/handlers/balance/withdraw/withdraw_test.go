@@ -1,6 +1,8 @@
-package balance
+package withdraw
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -10,8 +12,8 @@ import (
 	"github.com/go-resty/resty/v2"
 	"github.com/ryabkov82/gofermart/internal/app/service"
 	"github.com/ryabkov82/gofermart/internal/app/service/mocks"
+	"github.com/stretchr/testify/assert"
 
-	"github.com/ryabkov82/gofermart/internal/app/models"
 	"github.com/ryabkov82/gofermart/internal/app/utils/jwtauth"
 	"github.com/ryabkov82/gofermart/internal/app/utils/logger"
 
@@ -21,7 +23,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/golang/mock/gomock"
-	"github.com/stretchr/testify/assert"
 )
 
 var (
@@ -55,7 +56,7 @@ func TestGetHandler(t *testing.T) {
 	mockDB := mocks.NewMockRepository(ctrl)
 
 	// инициализируем service объектом-заглушкой
-	service := service.NewService(mockDB)
+	srv := service.NewService(mockDB)
 
 	if err := logger.Initialize("debug"); err != nil {
 		panic(err)
@@ -65,93 +66,102 @@ func TestGetHandler(t *testing.T) {
 	r.Use(mwlogger.RequestLogging(logger.Log))
 	r.Use(mwgzip.Gzip)
 	r.Use(auth.AuthMiddleware(testSecretKey))
-	r.Get("/api/user/balance", GetHandler(service, logger.Log))
+	r.Post("/api/user/balance/withdraw", GetHandler(srv, logger.Log))
 
 	// запускаем тестовый сервер, будет выбран первый свободный порт
-	srv := httptest.NewServer(r)
+	server := httptest.NewServer(r)
 	// останавливаем сервер после завершения теста
-	defer srv.Close()
+	defer server.Close()
 
 	cookie1 := createSignedCookie(1, "test_user1")
 
 	tests := []struct {
 		name           string
-		setupMocks     func()
 		cookie         *http.Cookie
+		requestBody    WithdrawRequest
+		setupMocks     func()
 		expectedStatus int
-		expectedBody   string
 	}{
 		{
-			name: "successful request with balance",
-			setupMocks: func() {
-				// Ожидаем запрос баланса для userID=1
-				mockDB.EXPECT().
-					GetUserBalance(gomock.Any(), 1).
-					Return(models.Balance{Current: 500.5, Withdrawn: 42.0}, nil)
+			name: "successful withdrawal",
+			requestBody: WithdrawRequest{
+				Order: "2377225624", // Valid Luhn number
+				Sum:   100,
 			},
-			cookie:         cookie1,
+			cookie: cookie1,
+			setupMocks: func() {
+				mockDB.EXPECT().WithdrawFunds(gomock.Any(), 1, "2377225624", 100.0).Return(nil)
+			},
 			expectedStatus: http.StatusOK,
-			expectedBody:   `{"current":500.5,"withdrawn":42}`,
 		},
 		{
-			name: "no balance record found",
+			name: "insufficient funds",
+			requestBody: WithdrawRequest{
+				Order: "2377225624",
+				Sum:   600,
+			},
+			cookie: cookie1,
 			setupMocks: func() {
-				mockDB.EXPECT().
-					GetUserBalance(gomock.Any(), 1).
-					Return(models.Balance{Current: 0, Withdrawn: 0}, nil) // Нет записи - нулевой баланс
+				mockDB.EXPECT().WithdrawFunds(gomock.Any(), 1, "2377225624", 600.0).Return(service.ErrInsufficientFunds)
+			},
+			expectedStatus: http.StatusPaymentRequired,
+		},
+		{
+			name: "invalid order number",
+			requestBody: WithdrawRequest{
+				Order: "1234567890", // Invalid Luhn number
+				Sum:   100,
 			},
 			cookie:         cookie1,
-			expectedStatus: http.StatusOK,
-			expectedBody:   `{"current":0,"withdrawn":0}`,
+			setupMocks:     func() {},
+			expectedStatus: http.StatusUnprocessableEntity,
 		},
 		{
 			name:           "no token cookie",
 			setupMocks:     func() {},
 			cookie:         &http.Cookie{Name: "session", Value: ""},
 			expectedStatus: http.StatusUnauthorized,
-			expectedBody:   "",
-		},
-		{
-			name:           "invalid token",
-			setupMocks:     func() {},
-			cookie:         &http.Cookie{Name: "token", Value: "invalid_token"},
-			expectedStatus: http.StatusUnauthorized,
-			expectedBody:   "",
 		},
 		{
 			name: "database error",
+			requestBody: WithdrawRequest{
+				Order: "2377225624",
+				Sum:   600,
+			},
 			setupMocks: func() {
-				mockDB.EXPECT().
-					GetUserBalance(gomock.Any(), 1).
-					Return(models.Balance{Current: 0, Withdrawn: 0}, errors.New("database error"))
+				mockDB.EXPECT().WithdrawFunds(gomock.Any(), 1, "2377225624", 600.0).Return(errors.New("database error"))
 			},
 			cookie:         cookie1,
 			expectedStatus: http.StatusInternalServerError,
-			expectedBody:   "",
 		},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 
 			tt.setupMocks()
 
-			resp, err := resty.New().R().
-				SetCookie(tt.cookie).
-				SetHeader("Accept-Encoding", "gzip").
-				Get(srv.URL + "/api/user/balance")
+			// Подготовка тела запроса
+			body, _ := json.Marshal(tt.requestBody)
 
+			buf := bytes.NewBuffer(nil)
+			zb := gzip.NewWriter(buf)
+			_, err := zb.Write(body)
+			assert.NoError(t, err)
+			err = zb.Close()
+			assert.NoError(t, err)
+
+			resp, err := resty.New().R().
+				SetBody(buf).
+				SetCookie(tt.cookie).
+				SetHeader("Content-Encoding", "gzip").
+				SetHeader("Accept-Encoding", "gzip").
+				Post(server.URL + "/api/user/balance/withdraw")
 			assert.NoError(t, err)
 
 			assert.Equal(t, tt.expectedStatus, resp.StatusCode())
 
-			if tt.expectedBody != "" {
-				var expected, actual interface{}
-				err = json.Unmarshal([]byte(tt.expectedBody), &expected)
-				assert.NoError(t, err)
-				err = json.Unmarshal(resp.Body(), &actual)
-				assert.NoError(t, err)
-				assert.Equal(t, expected, actual)
-			}
 		})
 	}
+
 }

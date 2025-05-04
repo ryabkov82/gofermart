@@ -2,9 +2,16 @@ package service
 
 import (
 	"context"
+	"errors"
 
 	"github.com/ryabkov82/gofermart/internal/app/models"
+	"github.com/ryabkov82/gofermart/internal/app/utils"
 	"github.com/ryabkov82/gofermart/internal/app/utils/jwtauth"
+)
+
+var (
+	ErrInvalidOrderNumber = errors.New("invalid order number")
+	ErrInsufficientFunds  = errors.New("insufficient funds")
 )
 
 type Repository interface {
@@ -13,6 +20,7 @@ type Repository interface {
 	AddOrder(context.Context, *models.Order) error
 	GetUserOrders(context.Context, int) ([]models.Order, error)
 	GetUserBalance(context.Context, int) (models.Balance, error)
+	WithdrawFunds(context.Context, int, string, float64) error
 }
 
 type Service struct {
@@ -49,16 +57,16 @@ func (s *Service) GetUserByLogin(ctx context.Context, login string) (*models.Use
 
 func (s *Service) AddOrder(ctx context.Context, number string) (*models.Order, error) {
 
+	numberIsValid := utils.ValidateOrderNumber(number)
+
+	if !numberIsValid {
+		return nil, ErrInvalidOrderNumber
+	}
+
 	userID := ctx.Value(jwtauth.UserIDContextKey)
 	order := &models.Order{
 		Number: number,
 		UserID: userID.(int),
-	}
-
-	numberIsValid := order.ValidateOrderNumber()
-
-	if !numberIsValid {
-		return order, models.ErrInvalidOrderNumber
 	}
 
 	err := s.repo.AddOrder(ctx, order)
@@ -79,5 +87,19 @@ func (s *Service) GetUserBalance(ctx context.Context) (models.Balance, error) {
 	userID := ctx.Value(jwtauth.UserIDContextKey)
 	balance, err := s.repo.GetUserBalance(ctx, userID.(int))
 	return balance, err
+
+}
+
+func (s *Service) WithdrawFunds(ctx context.Context, order string, sum float64) error {
+
+	numberIsValid := utils.ValidateOrderNumber(order)
+
+	if !numberIsValid {
+		return ErrInvalidOrderNumber
+	}
+
+	userID := ctx.Value(jwtauth.UserIDContextKey)
+	err := s.repo.WithdrawFunds(ctx, userID.(int), order, sum)
+	return err
 
 }
