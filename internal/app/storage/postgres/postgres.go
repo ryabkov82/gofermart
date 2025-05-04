@@ -210,7 +210,7 @@ func (s *PostgresStorage) WithdrawFunds(ctx context.Context, userID int, order s
 		userID,
 	).Scan(&currentBalance)
 
-	if err != nil {
+	if err != nil && err != sql.ErrNoRows {
 		return err
 	}
 
