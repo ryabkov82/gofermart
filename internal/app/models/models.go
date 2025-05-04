@@ -37,6 +37,12 @@ type Order struct {
 	UploadedAt time.Time   `json:"uploaded_at"`
 }
 
+type Withdrawal struct {
+	Order       string    `json:"order"`
+	Sum         float64   `json:"sum"`
+	ProcessedAt time.Time `json:"processed_at"`
+}
+
 // HashPassword создает bcrypt-хеш пароля
 func (u *User) HashPassword(password string) error {
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)

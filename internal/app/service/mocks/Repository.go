@@ -108,6 +108,21 @@ func (mr *MockRepositoryMockRecorder) GetUserOrders(arg0, arg1 interface{}) *gom
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUserOrders", reflect.TypeOf((*MockRepository)(nil).GetUserOrders), arg0, arg1)
 }
 
+// GetWithdrawals mocks base method.
+func (m *MockRepository) GetWithdrawals(arg0 context.Context, arg1 int) ([]models.Withdrawal, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetWithdrawals", arg0, arg1)
+	ret0, _ := ret[0].([]models.Withdrawal)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetWithdrawals indicates an expected call of GetWithdrawals.
+func (mr *MockRepositoryMockRecorder) GetWithdrawals(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetWithdrawals", reflect.TypeOf((*MockRepository)(nil).GetWithdrawals), arg0, arg1)
+}
+
 // WithdrawFunds mocks base method.
 func (m *MockRepository) WithdrawFunds(arg0 context.Context, arg1 int, arg2 string, arg3 float64) error {
 	m.ctrl.T.Helper()

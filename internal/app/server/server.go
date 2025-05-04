@@ -13,6 +13,7 @@ import (
 	"github.com/ryabkov82/gofermart/internal/app/config"
 	"github.com/ryabkov82/gofermart/internal/app/handlers/balance/getbalance"
 	"github.com/ryabkov82/gofermart/internal/app/handlers/balance/withdraw"
+	"github.com/ryabkov82/gofermart/internal/app/handlers/balance/withdrawals"
 	"github.com/ryabkov82/gofermart/internal/app/handlers/orders/getorders"
 	"github.com/ryabkov82/gofermart/internal/app/handlers/orders/upload"
 	"github.com/ryabkov82/gofermart/internal/app/handlers/users/login"
@@ -78,6 +79,7 @@ func StartServer(log *zap.Logger, cfg *config.Config) {
 		router.Get("/api/user/orders", getorders.GetHandler(srv, log))
 		router.Get("/api/user/balance", getbalance.GetHandler(srv, log))
 		router.Post("/api/user/balance/withdraw", withdraw.GetHandler(srv, log))
+		router.Get("/api/user/withdrawals", withdrawals.GetHandler(srv, log))
 	})
 
 	log.Info("Server started", zap.String("address", cfg.HTTPServerAddr))

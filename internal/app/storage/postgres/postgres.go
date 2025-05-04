@@ -238,3 +238,30 @@ func (s *PostgresStorage) WithdrawFunds(ctx context.Context, userID int, order s
 
 	return tx.Commit()
 }
+
+func (s *PostgresStorage) GetWithdrawals(ctx context.Context, userID int) ([]models.Withdrawal, error) {
+
+	rows, err := s.db.QueryContext(ctx,
+		"SELECT order_number, sum, processed_at FROM withdrawals WHERE user_id = $1 ORDER BY processed_at DESC",
+		userID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var withdrawals []models.Withdrawal
+	for rows.Next() {
+		var w models.Withdrawal
+		if err := rows.Scan(&w.Order, &w.Sum, &w.ProcessedAt); err != nil {
+			return nil, err
+		}
+		withdrawals = append(withdrawals, w)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return withdrawals, nil
+}

@@ -21,6 +21,7 @@ type Repository interface {
 	GetUserOrders(context.Context, int) ([]models.Order, error)
 	GetUserBalance(context.Context, int) (models.Balance, error)
 	WithdrawFunds(context.Context, int, string, float64) error
+	GetWithdrawals(context.Context, int) ([]models.Withdrawal, error)
 }
 
 type Service struct {
@@ -101,5 +102,13 @@ func (s *Service) WithdrawFunds(ctx context.Context, order string, sum float64) 
 	userID := ctx.Value(jwtauth.UserIDContextKey)
 	err := s.repo.WithdrawFunds(ctx, userID.(int), order, sum)
 	return err
+
+}
+
+func (s *Service) GetWithdrawals(ctx context.Context) ([]models.Withdrawal, error) {
+
+	userID := ctx.Value(jwtauth.UserIDContextKey)
+	withdrawals, err := s.repo.GetWithdrawals(ctx, userID.(int))
+	return withdrawals, err
 
 }
