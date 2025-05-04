@@ -14,11 +14,12 @@ import (
 )
 
 type PostgresStorage struct {
-	db                *sql.DB
-	insertUserStmt    *sql.Stmt
-	getUserStmt       *sql.Stmt
-	insertOrderStmt   *sql.Stmt
-	getUserOrdersStmt *sql.Stmt
+	db                 *sql.DB
+	insertUserStmt     *sql.Stmt
+	getUserStmt        *sql.Stmt
+	insertOrderStmt    *sql.Stmt
+	getUserOrdersStmt  *sql.Stmt
+	getUserBalanceStmt *sql.Stmt
 }
 
 func NewPostgresStorage(StoragePath string) (*PostgresStorage, error) {
@@ -81,7 +82,12 @@ func NewPostgresStorage(StoragePath string) (*PostgresStorage, error) {
 		return nil, err
 	}
 
-	return &PostgresStorage{db, insertUserStmt, getUserStmt, insertOrderStmt, getUserOrdersStmt}, nil
+	getUserBalanceStmt, err := db.Prepare(`SELECT current_balance, withdrawn_balance FROM user_balances WHERE user_id = $1`)
+	if err != nil {
+		return nil, err
+	}
+
+	return &PostgresStorage{db, insertUserStmt, getUserStmt, insertOrderStmt, getUserOrdersStmt, getUserBalanceStmt}, nil
 
 }
 
@@ -161,5 +167,29 @@ func (s *PostgresStorage) GetUserOrders(ctx context.Context, userID int) ([]mode
 	}
 
 	return orders, nil
+
+}
+
+func (s *PostgresStorage) GetUserBalance(ctx context.Context, userID int) (models.Balance, error) {
+
+	balance := models.Balance{Current: 0, Withdrawn: 0}
+
+	rows, err := s.getUserBalanceStmt.QueryContext(ctx, userID)
+	if err != nil {
+		return balance, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		if err := rows.Scan(&balance.Current, &balance.Withdrawn); err != nil {
+			return balance, err
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return balance, fmt.Errorf("rows error: %w", err)
+	}
+
+	return balance, nil
 
 }

@@ -12,6 +12,7 @@ type Repository interface {
 	GetUserByLogin(context.Context, string) (*models.User, error)
 	AddOrder(context.Context, *models.Order) error
 	GetUserOrders(context.Context, int) ([]models.Order, error)
+	GetUserBalance(context.Context, int) (models.Balance, error)
 }
 
 type Service struct {
@@ -19,7 +20,6 @@ type Service struct {
 }
 
 func NewService(storage Repository) *Service {
-
 	return &Service{
 		repo: storage,
 	}
@@ -72,4 +72,12 @@ func (s *Service) GetUserOrders(ctx context.Context) ([]models.Order, error) {
 	userID := ctx.Value(jwtauth.UserIDContextKey)
 	orders, err := s.repo.GetUserOrders(ctx, userID.(int))
 	return orders, err
+}
+
+func (s *Service) GetUserBalance(ctx context.Context) (models.Balance, error) {
+
+	userID := ctx.Value(jwtauth.UserIDContextKey)
+	balance, err := s.repo.GetUserBalance(ctx, userID.(int))
+	return balance, err
+
 }

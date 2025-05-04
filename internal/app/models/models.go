@@ -29,6 +29,11 @@ const (
 	OrderStatusRegistered OrderStatus = "REGISTERED"
 )
 
+type Balance struct {
+	Current   float64 `json:"current"`
+	Withdrawn float64 `json:"withdrawn"`
+}
+
 // Order представляет модель данных заказа
 type Order struct {
 	Number     string      `json:"number"`
