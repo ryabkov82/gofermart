@@ -101,10 +101,15 @@ func (w *AccrualWorker) loadTasks(ctx context.Context) {
 		select {
 		case w.taskQueue <- OrderTask{OrderNumber: order.Number, Status: order.Status, UserID: order.UserID}:
 			w.trackActiveTask(order.Number) // Помечаем как "в обработке"
-		default:
-			w.logger.Info("Task queue full, skipping")
+		case <-w.shutdownChan:
 			return
+			/* ждем пока не освободится место в канале
+			default:
+				w.logger.Info("Task queue full, skipping")
+				return
+			*/
 		}
+
 	}
 }
 
